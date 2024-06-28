@@ -13,17 +13,28 @@ typedef struct packed {
 module top_level
   (
    input wire 	       clk_100mhz,
-   input wire 	       uart_rxd,
-   input wire [3:0]    btn,
+   output logic [15:0] led,
+   input wire [7:0]    pmoda,
+   input wire [2:0]    pmodb,
+   output logic        pmodb_clk,
+   inout wire 	       pmodb_scl,
+   inout wire 	       pmodb_sda,
    input wire [15:0]   sw,
-   output logic        uart_txd,
+   input wire [3:0]    btn,
    output logic [2:0]  rgb0,
    output logic [2:0]  rgb1,
-   output logic [3:0]  ss0_an,
-   output logic [3:0]  ss1_an,
-   output logic [6:0]  ss0_c,
-   output logic [6:0]  ss1_c,
-   output logic [15:0] led,
+   // seven segment
+   output logic [3:0]  ss0_an,//anode control for upper four digits of seven-seg display
+   output logic [3:0]  ss1_an,//anode control for lower four digits of seven-seg display
+   output logic [6:0]  ss0_c, //cathode controls for the segments of upper four digits
+   output logic [6:0]  ss1_c, //cathod controls for the segments of lower four digits
+   // uart for manta
+   input wire 	       uart_rxd,
+   output logic        uart_txd,
+   // hdmi port
+   output logic [2:0]  hdmi_tx_p, //hdmi output signals (positives) (blue, green, red)
+   output logic [2:0]  hdmi_tx_n, //hdmi output signals (negatives) (blue, green, red)
+   output logic        hdmi_clk_p, hdmi_clk_n, //differential hdmi clock
    // DDR3 ports
    inout wire [15:0]   ddr3_dq,
    inout wire [1:0]    ddr3_dqs_n,
@@ -40,23 +51,41 @@ module top_level
    output wire [1:0]   ddr3_dm,
    output wire 	       ddr3_odt
    );
+   assign rgb0 = 0;
+   assign rgb1 = 0;
+   
    localparam BAUD = 57600;
+   localparam CAMERA_FB_ADDR = 27'h400;
    
-   
+   logic 	       clk_100_passthrough;
    logic 	       sys_clk;
-   logic 	       clk_migref;
-
-   logic 	       sys_rst;
-   assign sys_rst = btn[0];
-
-   clk_wiz_mig_clk_wiz clocking_wizard
-     (.clk_in1(clk_100mhz),
-      .clk_default(sys_clk),
-      .clk_mig(clk_migref), // 200MHz
-      .reset(0));
+   logic 	       clk_camera;
+   logic 	       clk_pixel;
+   logic 	       clk_5x;
+   logic 	       clk_xc;
 
    logic 	       ui_clk;
    logic 	       sys_rst_ui;
+
+   camera_clocks_clk_wiz
+     (.clk_in1(clk_100mhz),
+      .clk_camera(clk_camera),
+      .clk_100a(clk_100_passthrough),
+      .clk_100b(sys_clk),
+      .clk_xc(clk_xc),
+      .reset(0));
+
+   assign pmodb_clk = clk_xc;
+
+   hdmi_clocks_clk_wiz
+     (.clk_in1(clk_100_passthrough),
+      .clk_pixel(clk_pixel),
+      .clk_5x(clk_5x),
+      .reset(0));
+   
+   logic 	       sys_rst;
+   assign sys_rst = btn[0];
+
 
    // bonus signal to prevent processor from running away while there's no assembly
    logic 	       proc_release;
@@ -70,6 +99,347 @@ module top_level
       end
    end
 
+   logic trigger_btn_camera;
+   assign btn[1] = trigger_btn_camera;
+
+   // CHAPTER: Camera Handler
+
+   // camera_bare
+   logic 	       hsync_raw;
+   logic 	       hsync;
+   logic 	       vsync_raw;
+   logic 	       vsync;
+   
+   logic [15:0]        data;
+   logic 	       valid_pixel;
+   logic 	       valid_byte;
+      
+   // buffering
+   logic [2:0] 	       pmodb_buf0;
+   logic [7:0] 	       pmoda_buf0;
+   
+   logic [2:0] 	       pmodb_buf; // buffer, to make sure values only update on our clock domain!p
+   logic [7:0] 	       pmoda_buf;
+   
+   // ==================== CHAPTER: CAMERA CAPTURE =======================
+   always_ff @(posedge clk_camera) begin
+      pmoda_buf0 <= pmoda;
+      pmodb_buf0 <= pmodb;
+      
+      pmoda_buf <= pmoda_buf0;
+      pmodb_buf <= pmodb_buf0;
+   end
+
+   camera_bare cbm
+     (.clk_pixel_in(clk_camera),
+      .pclk_cam_in(pmodb_buf[0] ),
+      .hs_cam_in(pmodb_buf[2]),
+      .vs_cam_in(pmodb_buf[1]),
+      .rst_in(sys_rst),
+      .data_cam_in(pmoda_buf),
+      .hs_cam_out(hsync_raw),
+      .vs_cam_out(vsync_raw),
+      .data_out(data),
+      .valid_out(valid_pixel),
+      .valid_byte(valid_byte)
+      );
+   // assign hsync = sw[0] ^ hsync_raw; // if sw[0], invert hsync
+   // assign vsync = sw[1] ^ vsync_raw; // if sw[1], invert vsync
+   assign hsync = hsync_raw;
+   assign vsync = vsync_raw;
+
+   logic valid_cc;
+   logic [15:0] pixel_cc;
+   logic [12:0] hcount_cc;
+   logic [11:0] vcount_cc;
+
+   camera_coord ccm
+     (.clk_in(clk_camera),
+      .rst_in(sys_rst),
+      .valid_in(valid_pixel),
+      .data_in(data),
+      .hsync_in(hsync),
+      .vsync_in(vsync),
+      .valid_out(valid_cc),
+      .data_out(pixel_cc),
+      .hcount_out(hcount_cc),
+      .vcount_out(vcount_cc)
+      );
+
+   // pass pixels into the phrase builder
+   // ignore the ready signal! if its not ready, data will just be missed.
+   // nothing else can be done since this is just coming at the rate of the camera
+   logic 	phrase_axis_valid;
+   logic 	phrase_axis_ready;
+
+   logic [127:0] cam_phrase_data;
+   logic [127:0] phrase_axis_data;
+
+   logic 	 newframe_cc;
+   logic 	 phrase_axis_tuser;
+   logic 	 ready_builder;
+   
+   assign newframe_cc = (hcount_cc <= 1 && vcount_cc == 0);
+   
+   build_wr_data
+     (.clk_in(clk_camera),
+      .rst_in(sys_rst),
+      .valid_in(valid_cc),
+      .ready_in(ready_builder), // discarded currently
+      // .data_in(pixel_cc_filter),// temporary test value
+      .data_in(pixel_cc),
+      .newframe_in(newframe_cc),
+      .valid_out(phrase_axis_valid),
+      .ready_out(phrase_axis_ready),
+      .data_out(cam_phrase_data),
+      .tuser_out(phrase_axis_tuser)
+      );
+
+   channel_update write_addr_cmd = {CAMERA_FB_ADDR, 1280*720>>3,1'b1};
+   assign phrase_axis_data = phrase_axis_tuser ? write_addr_cmd : cam_phrase_data;
+
+   // =============== CHAPTER: MEMORY MIG STUFF ====================
+
+   logic 	 cam_write_axis_valid;
+   logic 	 cam_write_axis_ready;
+   logic [127:0] cam_write_axis_phrase;
+   logic 	 cam_write_axis_tuser;
+
+   logic 	 small_pile;
+
+   ddr_fifo camera_write
+     (.sender_rst(sys_rst), 
+      .sender_clk(clk_camera),
+      .sender_axis_tvalid(phrase_axis_valid),
+      .sender_axis_tready(phrase_axis_ready),
+      .sender_axis_tdata(phrase_axis_data),
+      .sender_axis_tuser(phrase_axis_tuser),
+      .receiver_clk(ui_clk),
+      .receiver_axis_tvalid(cam_write_axis_valid),
+      .receiver_axis_tready(cam_write_axis_ready), // ready will spit you data! use in proper state
+      .receiver_axis_tdata(cam_write_axis_phrase),
+      .receiver_axis_tuser(cam_write_axis_tuser));
+
+   logic [127:0]       hdmi_resp_axis_data;
+   logic 	       hdmi_resp_axis_tuser;
+   logic 	       hdmi_resp_axis_ready;
+   logic 	       hdmi_resp_axis_valid;
+
+   logic 	       hdmi_resp_axis_af;
+
+   logic 	       hdmi_axis_valid;
+   logic 	       hdmi_axis_ready;
+   logic [127:0]       hdmi_axis_data;
+   logic 	       hdmi_axis_tuser;
+   
+   ddr_fifo hdmi_read
+     (.sender_rst(sys_rst_ui), // active low
+      .sender_clk(ui_clk),
+      .sender_axis_tvalid(hdmi_resp_axis_valid),
+      .sender_axis_tready(hdmi_resp_axis_ready),
+      .sender_axis_tdata(hdmi_resp_axis_data),
+      .sender_axis_tuser(hdmi_resp_axis_tuser),
+      .sender_axis_prog_full(hdmi_resp_axis_af),
+      .receiver_clk(clk_pixel),
+      .receiver_axis_tvalid(hdmi_axis_valid),
+      .receiver_axis_tready(hdmi_axis_ready), // ready will spit you data! use in proper state
+      .receiver_axis_tdata(hdmi_axis_data),
+      .receiver_axis_tuser(hdmi_axis_tuser));
+
+   logic [15:0]  hdmi_pixel;
+   logic 	 hdmi_pixel_ready;
+   logic 	 hdmi_pixel_valid;
+   logic 	 hdmi_pixel_nf;
+
+   digest_phrase
+     (.clk_in(clk_pixel),
+      .rst_in(sys_rst),
+      .valid_phrase(hdmi_axis_valid),
+      .ready_phrase(hdmi_axis_ready),
+      .phrase_data(hdmi_axis_data),
+      .phrase_tuser(hdmi_axis_tuser),
+      .valid_word(hdmi_pixel_valid),
+      .ready_word(hdmi_pixel_ready),
+      .newframe_out(hdmi_pixel_nf),
+      .word(hdmi_pixel));
+   // =============== CHAPTER: HDMI OUTPUT =========================
+   
+   logic [9:0] tmds_10b [0:2]; //output of each TMDS encoder!
+   logic       tmds_signal [2:0]; //output of each TMDS serializer!
+   
+   // video signal generator
+   logic 	       hsync_hdmi;
+   logic 	       vsync_hdmi;
+   logic [10:0]        hcount_hdmi;
+   logic [9:0] 	       vcount_hdmi;
+   logic 	       active_draw_hdmi;
+   logic 	       new_frame_hdmi;
+   logic [5:0] 	       frame_count_hdmi;
+
+   // rgb output values
+   logic [7:0] 	       red,green,blue;
+   
+   
+   // // for now:
+   // assign red = 8'hFF;
+   // assign green = 8'h77;
+   // assign blue = 8'hAA;
+
+   // hold ready signal low until newframe_hdmi
+   assign hdmi_pixel_ready = active_draw_hdmi && ( ~hdmi_pixel_nf || (vcount_hdmi == 0 && hcount_hdmi == 0));
+
+   assign red = hdmi_pixel_valid ? {hdmi_pixel[15:11],3'b0} : 8'hFF;
+   assign green = hdmi_pixel_valid ? {hdmi_pixel[10:5],2'b0} : 8'h77;
+   assign blue = hdmi_pixel_valid ? {hdmi_pixel[4:0],3'b0} : 8'hAA;
+   // assign red = hdmi_pixel_valid ? 8'hFF : 16'h88;
+   // assign green = hdmi_pixel_valid ? 8'h77 : 8'h88;
+   // assign blue = hdmi_pixel_valid ? 8'hAA : 8'h88;
+   // assign red = {hdmi_pixel_hold[15:11],3'b0};
+   // assign green = {hdmi_pixel_hold[10:5],2'b0};
+   // assign blue = {hdmi_pixel_hold[4:0],3'b0};
+   
+   video_sig_gen vsg
+     (
+      .clk_pixel_in(clk_pixel),
+      .rst_in(sys_rst),
+      .hcount_out(hcount_hdmi),
+      .vcount_out(vcount_hdmi),
+      .vs_out(vsync_hdmi),
+      .hs_out(hsync_hdmi),
+      .ad_out(active_draw_hdmi),
+      .fc_out(frame_count_hdmi)
+      );
+   
+   
+      
+   //three tmds_encoders (blue, green, red)
+   //note green should have no control signal like red
+   //the blue channel DOES carry the two sync signals:
+   //  * control_in[0] = horizontal sync signal
+   //  * control_in[1] = vertical sync signal
+
+   tmds_encoder tmds_red(
+			 .clk_in(clk_pixel),
+			 .rst_in(sys_rst),
+			 .data_in(red),
+			 .control_in(2'b0),
+			 .ve_in(active_draw_hdmi),
+			 .tmds_out(tmds_10b[2]));
+
+   tmds_encoder tmds_green(
+			   .clk_in(clk_pixel),
+			   .rst_in(sys_rst),
+			   .data_in(green),
+			   .control_in(2'b0),
+			   .ve_in(active_draw_hdmi),
+			   .tmds_out(tmds_10b[1]));
+
+   tmds_encoder tmds_blue(
+			  .clk_in(clk_pixel),
+			  .rst_in(sys_rst),
+			  .data_in(blue),
+			  .control_in({vsync_hdmi,hsync_hdmi}),
+			  .ve_in(active_draw_hdmi),
+			  .tmds_out(tmds_10b[0]));
+   
+   
+   //three tmds_serializers (blue, green, red):
+   //MISSING: two more serializers for the green and blue tmds signals.
+   tmds_serializer red_ser(
+			   .clk_pixel_in(clk_pixel),
+			   .clk_5x_in(clk_5x),
+			   .rst_in(sys_rst),
+			   .tmds_in(tmds_10b[2]),
+			   .tmds_out(tmds_signal[2]));
+   tmds_serializer green_ser(
+			   .clk_pixel_in(clk_pixel),
+			   .clk_5x_in(clk_5x),
+			   .rst_in(sys_rst),
+			   .tmds_in(tmds_10b[1]),
+			   .tmds_out(tmds_signal[1]));
+   tmds_serializer blue_ser(
+			   .clk_pixel_in(clk_pixel),
+			   .clk_5x_in(clk_5x),
+			   .rst_in(sys_rst),
+			   .tmds_in(tmds_10b[0]),
+			   .tmds_out(tmds_signal[0]));
+   
+   //output buffers generating differential signals:
+   //three for the r,g,b signals and one that is at the pixel clock rate
+   //the HDMI receivers use recover logic coupled with the control signals asserted
+   //during blanking and sync periods to synchronize their faster bit clocks off
+   //of the slower pixel clock (so they can recover a clock of about 742.5 MHz from
+   //the slower 74.25 MHz clock)
+   OBUFDS OBUFDS_blue (.I(tmds_signal[0]), .O(hdmi_tx_p[0]), .OB(hdmi_tx_n[0]));
+   OBUFDS OBUFDS_green(.I(tmds_signal[1]), .O(hdmi_tx_p[1]), .OB(hdmi_tx_n[1]));
+   OBUFDS OBUFDS_red  (.I(tmds_signal[2]), .O(hdmi_tx_p[2]), .OB(hdmi_tx_n[2]));
+   OBUFDS OBUFDS_clock(.I(clk_pixel), .O(hdmi_clk_p), .OB(hdmi_clk_n));
+   
+   // ====================== CHAPTER: REGISTER WRITES ===================
+
+   logic       cr_init_valid, cr_init_ready;
+   assign cr_init_valid = trigger_btn_camera;
+
+   logic [23:0] bram_dout;
+   logic [7:0] 	bram_addr;
+   
+   
+   xilinx_single_port_ram_read_first
+     #(
+       .RAM_WIDTH(24),                       // Specify RAM data width
+       .RAM_DEPTH(256),                     // Specify RAM depth (number of entries)
+       .RAM_PERFORMANCE("HIGH_PERFORMANCE"), // Select "HIGH_PERFORMANCE" or "LOW_LATENCY" 
+       .INIT_FILE("rom.mem")          // Specify name/location of RAM initialization file if using one (leave blank if not)
+       ) registers
+       (
+	.addra(bram_addr),     // Address bus, width determined from RAM_DEPTH
+	.dina(24'b0),       // RAM input data, width determined from RAM_WIDTH
+	.clka(clk_camera),       // Clock
+	.wea(1'b0),         // Write enable
+	.ena(1'b1),         // RAM Enable, for additional power savings, disable port when not in use
+	.rsta(sys_rst),       // Output reset (does not affect memory contents)
+	.regcea(1'b1),   // Output register enable
+	.douta(bram_dout)      // RAM output data, width determined from RAM_WIDTH
+	);
+
+   logic [23:0] registers_dout;
+   logic [7:0] 	registers_addr;
+   assign registers_dout = bram_dout;
+   assign bram_addr = registers_addr;
+   
+   logic       con_scl_i, con_scl_o, con_scl_t;
+   logic       con_sda_i, con_sda_o, con_sda_t;
+
+   // assign con_scl_i = pmodb_scl;
+   // assign pmodb_scl = con_scl_o ? 1'bz : 0;
+
+   // assign con_sda_i = pmodb_sda;
+   // assign pmodb_sda = con_sda_o ? 1'bz : 0;
+
+   // NOTE these also have pullup specified in the xdc file!
+   IOBUF IOBUF_scl (.I(con_scl_o), .IO(pmodb_scl), .O(con_scl_i), .T(con_scl_t) );
+   IOBUF IOBUF_sda (.I(con_sda_o), .IO(pmodb_sda), .O(con_sda_i), .T(con_sda_t) );
+
+   logic       busy,bus_active;
+   logic [3:0] ii_state;
+   
+   camera_registers crw
+     (.clk_in(clk_camera),
+      .rst_in(sys_rst),
+      .init_valid(cr_init_valid),
+      .init_ready(cr_init_ready),
+      .scl_i(con_scl_i),
+      .scl_o(con_scl_o),
+      .scl_t(con_scl_t),
+      .sda_i(con_sda_i),
+      .sda_o(con_sda_o),
+      .sda_t(con_sda_t),
+      .bram_dout(registers_dout),
+      .bram_addr(registers_addr),
+      .busy(busy),
+      .bus_active(bus_active),
+      .state_out(ii_state));
+   
 
    // CHAPTER: UART receiving assembly
    logic 	       uart_rxd_buf0;
@@ -101,6 +471,8 @@ module top_level
 
    channel_update initialize_assembly;
    assign initialize_assembly = { 27'b0, 27'b0, 1'b1 };
+
+   // CHAPTER: ASSEMBLY RECEIVER
 
    parse_asm pam
      (.clk_in(sys_clk),
@@ -355,6 +727,27 @@ module top_level
    logic [31:0]        mmio_data_hold;
    
    logic [31:0]        debug_lane;
+
+   // for the sake of syncing all potentially-used signals:
+   logic 	hsync_cc;
+   logic 	vsync_cc;
+   always_ff @(posedge clk_camera) begin
+      hsync_cc <= hsync;
+      vsync_cc <= vsync;
+   end
+
+   
+   logic [31:0] display_hcvc;
+   display_hcount_vcount dm00
+     (.clk_in(clk_camera),
+      .rst_in(sys_rst),
+      .hcount_in(hcount_cc),
+      .vcount_in(vcount_cc),
+      .hsync_in(hsync_cc),
+      .vsync_in(vsync_cc),
+      .display_out(display_hcvc)
+      );
+
    
    always_ff @(posedge sys_clk) begin
       if (sys_rst) begin
@@ -376,7 +769,7 @@ module top_level
    
    logic [31:0] val_to_display;
    // assign val_to_display = response_hold_chunks[offset];
-   assign val_to_display = btn[1] ? (btn[3] ? mmio_addr_hold : debug_pc) : (btn[3] ? mmio_data_hold : response_hold_chunks[offset]);
+   assign val_to_display = btn[1] ? (btn[3] ? response_hold_chunks[offset] : debug_pc) : (btn[3] ? debug_lane : display_hcvc);
    
 
    logic [6:0] 	       ss_c;
@@ -393,16 +786,16 @@ module top_level
 
    // channel merger (UI clock domain) connections
 
-   logic 	       tm_write_axis_ready[2:0];
-   logic 	       tm_write_axis_valid[2:0];
-   logic [127:0]       tm_write_axis_data[2:0];
-   logic 	       tm_write_axis_tuser[2:0];
+   logic 	       tm_write_axis_ready[4:0];
+   logic 	       tm_write_axis_valid[4:0];
+   logic [127:0]       tm_write_axis_data[4:0];
+   logic 	       tm_write_axis_tuser[4:0];
 
-   logic 	       tm_read_axis_ready[2:0];
-   logic 	       tm_read_axis_valid[2:0];
-   logic [127:0]       tm_read_axis_data[2:0];
-   logic 	       tm_read_axis_tuser[2:0];
-   logic 	       tm_read_axis_af[2:0];
+   logic 	       tm_read_axis_ready[4:0];
+   logic 	       tm_read_axis_valid[4:0];
+   logic [127:0]       tm_read_axis_data[4:0];
+   logic 	       tm_read_axis_tuser[4:0];
+   logic 	       tm_read_axis_af[4:0];
 
    // CHANNEL 0: processor core requests+responses
    assign ui_req_axis_ready = tm_write_axis_ready[0];
@@ -436,6 +829,25 @@ module top_level
    assign ui_ssc_resp_axis_data = tm_read_axis_data[2];
    assign ui_ssc_resp_axis_tuser = tm_read_axis_tuser[2];
    
+   // CHANNEL 3: write camera data, read nothing ever
+   assign tm_write_axis_data[3] = cam_write_axis_phrase;
+   assign tm_write_axis_tuser[3] = cam_write_axis_tuser;
+   assign tm_write_axis_valid[3] = cam_write_axis_valid;
+   assign cam_write_axis_ready = tm_write_axis_ready[3];
+
+   assign tm_read_axis_ready[3] = 1'b0;
+   
+   // CHANNEL 4: read hdmi data, write nothing ever
+   channel_update read_cmd = {CAMERA_FB_ADDR, (1280*720 >> 3), 1'b0};
+   assign tm_write_axis_data[4] = read_cmd;
+   assign tm_write_axis_tuser[4] = 1'b1;
+   assign tm_write_axis_valid[4] = 1'b1;
+
+   assign hdmi_resp_axis_data = tm_read_axis_data[4];
+   assign tm_read_axis_ready[4] = hdmi_resp_axis_ready;
+   assign hdmi_resp_axis_tuser = tm_read_axis_tuser[4];
+   assign tm_read_axis_af[4] = hdmi_resp_axis_af;
+   assign hdmi_resp_axis_valid = tm_read_axis_valid[4];
    
    // CHANNEL MERGER AND MIG
    // mig module
@@ -465,7 +877,7 @@ module top_level
 
    assign sys_rst_ui = ui_clk_sync_rst;
 
-   traffic_merger #(.CHANNEL_COUNT(3)) tg
+   traffic_merger #(.CHANNEL_COUNT(5)) tg
      (.clk_in(ui_clk),
       .rst_in(sys_rst_ui),
       .debug_lane(debug_lane),
@@ -518,7 +930,7 @@ module top_level
       .ddr3_cke(ddr3_cke),
       .ddr3_dm(ddr3_dm),
       .ddr3_odt(ddr3_odt),
-      .sys_clk_i(clk_migref),
+      .sys_clk_i(clk_camera),
       .app_addr(app_addr),
       .app_cmd(app_cmd),
       .app_en(app_en),
@@ -545,36 +957,32 @@ module top_level
       );
    
 
-   logic [7:0] 	       uart_tx_count;
+   logic [7:0] 	       phrase_axis_valid_count;
    always_ff @(posedge sys_clk) begin
       if(sys_rst) begin
-	uart_tx_count <= 1'b0;
+	 phrase_axis_valid_count <= 0;
       end else begin
-	 uart_tx_count <= uart_tx_count + (uart_tx_valid && uart_tx_ready);
+	 phrase_axis_valid_count <= phrase_axis_valid_count + (phrase_axis_valid);
       end
    end
-   
-   assign led[0] = getMMIOReq_rdy;
-   assign led[1] = getMReq_rdy;
-   assign led[2] = putMMIOResp_rdy;
-   assign led[3] = putMResp_rdy;
 
-   assign led[4] = init_calib_complete;
-   // assign led[5] = assembly_axis_ready;
-   // assign led[6] = assembly_axis_valid;
-   // assign led[7] = req_axis_ready;
-   // assign led[8] = req_axis_valid;
-   // assign led[9] = resp_axis_ready;
-   // assign led[10] = resp_axis_valid;
-   // assign led[12:11] = srstate;
-   
-   assign led[5] = proc_reset;
-   assign led[6] = debug_epoch;
-   assign led[7] = processor_done;
-   assign led[15:8] = uart_tx_count;
+   assign led[0] = proc_reset;
+   assign led[1] = debug_epoch;
+   assign led[2] = init_calib_complete;
+   assign led[3] = processor_done;
 
+   assign led[4] = cr_init_valid;
+   assign led[5] = valid_pixel;
+   assign led[6] = valid_cc;
+   assign led[7] = phrase_axis_valid;
+   assign led[8] = cam_write_axis_valid;
+   assign led[9] = tm_write_axis_valid[3];
+   assign led[10] = trigger_btn_camera;
+   assign led[11] = cr_init_ready;
+   assign led[12] = busy;
+   assign led[13] = bus_active;
+   assign led[15:14] = phrase_axis_valid_count;
    
-		   
 
 endmodule
 `default_nettype wire
