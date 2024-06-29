@@ -87,30 +87,9 @@ async def handle_mmio(dut):
             print("[PY] uart byte: %x" % dut.uart_tx_data.value)
         if (dut.processor_done == 1):
             print("[PY] EXIT")
-            assert False
-    
-@cocotb.test()
-async def test_a(dut):
-    """ give memory responses via python input """
+            return True
 
-    memory = generate_memory('mem.vmh')
-    for i in range(32):
-        print("{:02x}: {}".format(i,memory[i].hex()))
-    
-    dut.req_axis_ready.value = 0
-    dut.resp_axis_valid.value = 0
-    dut.resp_axis_data.value = 0
-    dut.resp_axis_tuser.value = 0
-    dut.putMMIOResp_en.value = 0
-    dut.uart_tx_ready.value = 1
-
-    await cocotb.start( generate_clock(dut.clk_in) )
-    await reset(dut.rst_in)
-
-    dut.req_axis_ready.value = 1
-    # await Timer(40000,units='ns')
-    await cocotb.start( handle_mmio(dut) )
-
+async def handle_memory_requests(dut,memory):
     current_addr = 0
     current_wen = 1
     while (True):
@@ -139,7 +118,29 @@ async def test_a(dut):
                 memory[current_addr] = dut.req_axis_data
                 current_addr += 1
         
-                
+    
+            
+@cocotb.test()
+async def test_a(dut):
+    """ give memory responses via python input """
 
+    memory = generate_memory('mem.vmh')
+    # for i in range(32):
+    #     print("{:02x}: {}".format(i,memory[i].hex()))
     
-    
+    dut.req_axis_ready.value = 0
+    dut.resp_axis_valid.value = 0
+    dut.resp_axis_data.value = 0
+    dut.resp_axis_tuser.value = 0
+    dut.putMMIOResp_en.value = 0
+    dut.uart_tx_ready.value = 1
+
+    await cocotb.start( generate_clock(dut.clk_in) )
+    await reset(dut.rst_in)
+
+    dut.req_axis_ready.value = 1
+    # await Timer(40000,units='ns')
+    await cocotb.start( handle_memory_requests(dut,memory) )
+    await handle_mmio(dut)
+
+                
