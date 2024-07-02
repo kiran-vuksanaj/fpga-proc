@@ -180,11 +180,19 @@ module top_level
    logic 	 ready_builder;
    
    assign newframe_cc = (hcount_cc <= 1 && vcount_cc == 0);
+
+   logic 	 freeze_frame;
+   always_ff @(posedge clk_camera) begin
+      if(sys_rst)
+	freeze_frame <= 0;
+      else if (newframe_cc)
+	freeze_frame <= sw[0];
+   end
    
    build_wr_data
      (.clk_in(clk_camera),
       .rst_in(sys_rst),
-      .valid_in(valid_cc),
+      .valid_in(valid_cc && ~freeze_frame),
       .ready_in(ready_builder), // discarded currently
       // .data_in(pixel_cc_filter),// temporary test value
       .data_in(pixel_cc),
@@ -195,7 +203,7 @@ module top_level
       .tuser_out(phrase_axis_tuser)
       );
 
-   channel_update write_addr_cmd = {CAMERA_FB_ADDR, 1280*720>>3,1'b1};
+   channel_update write_addr_cmd = {CAMERA_FB_ADDR, (1280*720)>>3,1'b1};
    assign phrase_axis_data = phrase_axis_tuser ? write_addr_cmd : cam_phrase_data;
 
    // =============== CHAPTER: MEMORY MIG STUFF ====================
@@ -288,15 +296,23 @@ module top_level
    // hold ready signal low until newframe_hdmi
    assign hdmi_pixel_ready = active_draw_hdmi && ( ~hdmi_pixel_nf || (vcount_hdmi == 0 && hcount_hdmi == 0));
 
-   assign red = hdmi_pixel_valid ? {hdmi_pixel[15:11],3'b0} : 8'hFF;
-   assign green = hdmi_pixel_valid ? {hdmi_pixel[10:5],2'b0} : 8'h77;
-   assign blue = hdmi_pixel_valid ? {hdmi_pixel[4:0],3'b0} : 8'hAA;
-   // assign red = hdmi_pixel_valid ? 8'hFF : 16'h88;
-   // assign green = hdmi_pixel_valid ? 8'h77 : 8'h88;
-   // assign blue = hdmi_pixel_valid ? 8'hAA : 8'h88;
-   // assign red = {hdmi_pixel_hold[15:11],3'b0};
-   // assign green = {hdmi_pixel_hold[10:5],2'b0};
-   // assign blue = {hdmi_pixel_hold[4:0],3'b0};
+   always_comb begin
+      if (hdmi_pixel_ready) begin
+	 if (sw[1]) begin
+	    red = {hdmi_pixel[15:11],3'b0};
+	    green = {hdmi_pixel[10:5],2'b0};
+	    blue = {hdmi_pixel[4:0], 3'b0};
+	 end else begin
+	    red = hdmi_pixel[7:0];
+	    green = hdmi_pixel[7:0];
+	    blue = hdmi_pixel[7:0];
+	 end
+      end else begin
+	 red = 8'hFF;
+	 green = 8'h77;
+	 blue = 8'hAA;
+      end
+   end
    
    video_sig_gen vsg
      (
@@ -838,7 +854,7 @@ module top_level
    assign tm_read_axis_ready[3] = 1'b0;
    
    // CHANNEL 4: read hdmi data, write nothing ever
-   channel_update read_cmd = {CAMERA_FB_ADDR, (1280*720 >> 3), 1'b0};
+   channel_update read_cmd = {CAMERA_FB_ADDR, ((1280*720) >> 3), 1'b0};
    assign tm_write_axis_data[4] = read_cmd;
    assign tm_write_axis_tuser[4] = 1'b1;
    assign tm_write_axis_valid[4] = 1'b1;
@@ -981,7 +997,7 @@ module top_level
    assign led[11] = cr_init_ready;
    assign led[12] = busy;
    assign led[13] = bus_active;
-   assign led[15:14] = phrase_axis_valid_count;
+   // assign led[15:14] = phrase_axis_valid_count;
    
 
 endmodule
