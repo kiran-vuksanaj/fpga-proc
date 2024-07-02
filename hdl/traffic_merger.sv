@@ -73,6 +73,7 @@ module traffic_merger #
    logic [26:0] 	     cmd_addr[CHANNEL_COUNT-1:0];
    logic [26:0] 	     resp_addr[CHANNEL_COUNT-1:0];
    logic [26:0] 	     target_addr[CHANNEL_COUNT-1:0];
+   logic [26:0] 	     command_addr[CHANNEL_COUNT-1:0];
    // channel combinational values
    logic 		     channel_ready[CHANNEL_COUNT-1:0];
    logic 		     read_cmd_done[CHANNEL_COUNT-1:0];
@@ -113,6 +114,8 @@ module traffic_merger #
 	 assign resp_addr_vcd = resp_addr[idx];
 	 logic [26:0] 	target_addr_vcd;
 	 assign target_addr_vcd = target_addr[idx];
+	 logic [26:0] 	command_addr_vcd;
+	 assign command_addr_vcd = command_addr[idx];
 	 logic 		channel_ready_vcd;
 	 assign channel_ready_vcd = channel_ready[idx];
 	 logic 		read_cmd_done_vcd;
@@ -148,7 +151,7 @@ module traffic_merger #
 	 // read responses
 	 if (next_response_channel == i) begin
 	    read_axis_data[i] = app_rd_data;
-	    read_axis_tuser[i] = 1'b0;
+	    read_axis_tuser[i] = resp_addr[i] == command_addr[i];
 	    read_axis_valid[i] = app_rd_data_valid;
 	 end else begin
 	    read_axis_data[i] = 0;
@@ -198,9 +201,11 @@ module traffic_merger #
 	 always_ff @(posedge clk_in) begin
 	    if (rst_in) begin
 	       target_addr[i] <= 0;
+	       command_addr[i] <= 0;
 	       wen[i] <= 0;
 	    end else if (new_command_received[i]) begin 
 	       target_addr[i] <= command.addr + command.stream_length;
+	       command_addr[i] <= command.addr;
 	       wen[i] <= command.wen;
 	    end
 	 end
