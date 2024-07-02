@@ -61,7 +61,20 @@ def print_tty(ser):
     while True:
         char = ser.read().decode('utf-8')
         print(char,end="")
+        if (char == '#'):
+            val = int.from_bytes( ser.read(4), "little" )
+            print("{:08x}".format(val),end="")
 
+def write_tty(ser):
+    total = 0
+    with open('dithered.p4','wb') as f:
+        while total < (1280*720/8):
+            char = ser.read()
+            f.write(char)
+            total += 1
+            if (total % 1000 == 0):
+                print(total)
+        
 
 if __name__ == "__main__":
     filename = sys.argv[1]
@@ -74,6 +87,7 @@ if __name__ == "__main__":
     print("file transmitted")
 
     print("listening for putchar TTY output")
-    print_tty(ser)    
+    # print_tty(ser)
+    write_tty(ser)
 
 

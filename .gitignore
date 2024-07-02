@@ -22,3 +22,6 @@ tight_setup_hold_pins.txt
 __pycache__/
 sim_build/
 venv/
+
+# images
+*.p4
