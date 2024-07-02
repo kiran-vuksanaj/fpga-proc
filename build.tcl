@@ -29,7 +29,6 @@ set_part $partNum
 
 # Read in all IP
 read_ip ./ip/ddr3_mig/ddr3_mig.xci
-read_ip ./ip/ddr_fifo/ddr_fifo.xci
 generate_target all [get_ips]
 synth_ip [get_ips]
 
