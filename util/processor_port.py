@@ -65,10 +65,10 @@ def print_tty(ser):
             val = int.from_bytes( ser.read(4), "little" )
             print("{:08x}".format(val),end="")
 
-def write_tty(ser):
+def write_tty(ser,filename):
     total = 0
-    with open('dithered.p4','wb') as f:
-        while total < (1280*720/8):
+    with open(filename,'wb') as f:
+        while True:
             char = ser.read()
             f.write(char)
             total += 1
@@ -86,8 +86,13 @@ if __name__ == "__main__":
     send_memfile(filename,ser)
     print("file transmitted")
 
-    print("listening for putchar TTY output")
-    # print_tty(ser)
-    write_tty(ser)
+    if (len(sys.argv) > 2):
+        output_filename = sys.argv[2]
+        print("writing output bytes to {}".format(output_filename))
+        write_tty(ser,output_filename)
+    else:
+        print("listening for TTY output, writing to shell")
+        print_tty(ser)
+
 
 
