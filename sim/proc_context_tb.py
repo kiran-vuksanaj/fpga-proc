@@ -3,6 +3,8 @@ from cocotb.triggers import RisingEdge, Timer, FallingEdge
 from cocotb.utils import get_sim_time
 import random
 
+AWAIT_DEILVER_SEMAPHORE = 0
+
 def write_memory(memory,current_addr,current_chunk):
     current_chunk.reverse()
     concatenated = bytearray()
@@ -72,13 +74,15 @@ async def deliver_value(clk,valid,ready,wire,data):
     wire.value = 0
     valid.value = 0
 
-async def deliver_values(clk,valid,ready,wire,data_list):
+async def deliver_values(dut,clk,valid,ready,wire,data_list):
+    dut.req_axis_ready.value = 0
     for value in data_list:
         value_int = int.from_bytes(value,'big')
         print("delivering %032x" % value_int)
         await deliver_value(clk,valid,ready,wire,value_int)
         await Timer(10,units="ns")
     print("[PY] delivery complete")
+    dut.req_axis_ready.value = 1
 
 async def handle_mmio(dut):
     while True:
@@ -87,30 +91,9 @@ async def handle_mmio(dut):
             print("[PY] uart byte: %x" % dut.uart_tx_data.value)
         if (dut.processor_done == 1):
             print("[PY] EXIT")
-            assert False
-    
-@cocotb.test()
-async def test_a(dut):
-    """ give memory responses via python input """
+            return True
 
-    memory = generate_memory('mem.vmh')
-    for i in range(32):
-        print("{:02x}: {}".format(i,memory[i].hex()))
-    
-    dut.req_axis_ready.value = 0
-    dut.resp_axis_valid.value = 0
-    dut.resp_axis_data.value = 0
-    dut.resp_axis_tuser.value = 0
-    dut.putMMIOResp_en.value = 0
-    dut.uart_tx_ready.value = 1
-
-    await cocotb.start( generate_clock(dut.clk_in) )
-    await reset(dut.rst_in)
-
-    dut.req_axis_ready.value = 1
-    # await Timer(40000,units='ns')
-    await cocotb.start( handle_mmio(dut) )
-
+async def handle_memory_requests(dut,memory):
     current_addr = 0
     current_wen = 1
     while (True):
@@ -133,13 +116,36 @@ async def test_a(dut):
                             resp_data_queue.append(memory[req_addr+i])
                         else:
                             resp_data_queue.append(bytes(4))
-                    await cocotb.start( deliver_values(dut.clk_in,dut.resp_axis_valid,dut.resp_axis_ready,dut.resp_axis_data, resp_data_queue) )
+                    print("deliver values {}".format(len(resp_data_queue)))
+                    await cocotb.start( deliver_values(dut,dut.clk_in,dut.resp_axis_valid,dut.resp_axis_ready,dut.resp_axis_data, resp_data_queue) )
             else:
-                print("[PY]writing at 0x%x, data=%x" % (current_addr, dut.req_axis_data))
+                print("[PY]writing at 0x%x, data=%x" % (current_addr, dut.req_axis_data.value))
                 memory[current_addr] = dut.req_axis_data
                 current_addr += 1
         
-                
+    
+            
+@cocotb.test()
+async def test_a(dut):
+    """ give memory responses via python input """
 
+    memory = generate_memory('mem.vmh')
+    # for i in range(32):
+    #     print("{:02x}: {}".format(i,memory[i].hex()))
     
-    
+    dut.req_axis_ready.value = 0
+    dut.resp_axis_valid.value = 0
+    dut.resp_axis_data.value = 0
+    dut.resp_axis_tuser.value = 0
+    dut.putMMIOResp_en.value = 0
+    dut.uart_tx_ready.value = 1
+
+    await cocotb.start( generate_clock(dut.clk_in) )
+    await reset(dut.rst_in)
+
+    dut.req_axis_ready.value = 1
+    # await Timer(40000,units='ns')
+    await cocotb.start( handle_memory_requests(dut,memory) )
+    await handle_mmio(dut)
+
+                
