@@ -538,25 +538,6 @@ module top_level
    logic [7:0] 	       uart_tx_data;
    logic 	       uart_tx_ready;
    logic 	       uart_tx_valid;
-   logic 	       processor_done;
-      
-   handle_mmio hmm
-     (.clk_in(sys_clk),
-      .rst_in(sys_rst),
-      
-      .getMMIOReq_en(getMMIOReq_en),
-      .getMMIOReq_rdy(getMMIOReq_rdy),
-      .getMMIOReq_data(getMMIOReq_data),
-
-      .putMMIOResp_en(putMMIOResp_en),
-      .putMMIOResp_rdy(putMMIOResp_rdy),
-      .putMMIOResp_data(putMMIOResp_data),
-
-      .uart_tx_data(uart_tx_data),
-      .uart_tx_ready(uart_tx_ready),
-      .uart_tx_valid(uart_tx_valid),
-
-      .processor_done(processor_done));
    
    uart_transmitter
      #(.BAUD_RATE(BAUD),
@@ -571,40 +552,10 @@ module top_level
    logic 	       proc_reset;
    assign proc_reset = (sys_rst || ~proc_release);
 
-   logic [31:0]        debug_pc;
-   logic 	       debug_epoch;
-   
-   mkProcCore processor
-     (.CLK(sys_clk),
-      .RST_N(~proc_reset), // reset active low, i think by default
-      .debug_pc(debug_pc),
-      .debug_epoch(debug_epoch),
-
-      .EN_getMReq(getMReq_en),
-      .getMReq(getMReq_data),
-      .RDY_getMReq(getMReq_rdy),
-
-      .putMResp_data(putMResp_data),
-      .EN_putMResp(putMResp_en),
-      .RDY_putMResp(putMResp_rdy),
-
-      .EN_getMMIOReq(getMMIOReq_en),
-      .getMMIOReq(getMMIOReq_data),
-      .RDY_getMMIOReq(getMMIOReq_rdy),
-
-      .putMMIOResp_data(putMMIOResp_data),
-      .EN_putMMIOResp(putMMIOResp_en),
-      .RDY_putMMIOResp(putMMIOResp_rdy));
-
    logic [127:0]       req_axis_data;
    logic 	       req_axis_tuser;
    logic 	       req_axis_ready;
    logic 	       req_axis_valid;
-
-   logic [127:0]       ui_req_axis_data;
-   logic 	       ui_req_axis_tuser;
-   logic 	       ui_req_axis_ready;
-   logic 	       ui_req_axis_valid;
 
    logic [127:0]       resp_axis_data;
    logic 	       resp_axis_tuser;
@@ -612,6 +563,37 @@ module top_level
    logic 	       resp_axis_valid;
    logic 	       resp_axis_af;
    
+   logic [31:0]        debug_pc;
+   logic 	       processor_done;
+
+   wrapped_processor processor
+     (.clk_in(sys_clk),
+      .rst_in(proc_reset), // processor is held at reset for longer than other components, so we can load memory in
+
+      .req_axis_data(req_axis_data),
+      .req_axis_tuser(req_axis_tuser),
+      .req_axis_ready(req_axis_ready),
+      .req_axis_valid(req_axis_valid),
+
+      .resp_axis_data(resp_axis_data),
+      .resp_axis_valid(resp_axis_valid),
+      .resp_axis_tuser(resp_axis_tuser),
+      .resp_axis_ready(resp_axis_ready),
+
+      .uart_tx_data(uart_tx_data),
+      .uart_tx_ready(uart_tx_ready),
+      .uart_tx_valid(uart_tx_valid),
+
+      .debug_pc(debug_pc),
+
+      .processor_done(processor_done));
+
+      
+   logic [127:0]       ui_req_axis_data;
+   logic 	       ui_req_axis_tuser;
+   logic 	       ui_req_axis_ready;
+   logic 	       ui_req_axis_valid;
+
    logic [127:0]       ui_resp_axis_data;
    logic 	       ui_resp_axis_tuser;
    logic 	       ui_resp_axis_ready;
@@ -619,19 +601,7 @@ module top_level
 
 
    // pathway: processor request -> serialize -> clock domain cross -> channel merger
-   logic [1:0] 	       srstate;
    
-   serialize_req srm
-     (.clk_in(sys_clk),
-      .rst_in(sys_rst),
-      .getMReq_en(getMReq_en),
-      .getMReq_rdy(getMReq_rdy),
-      .getMReq_data(getMReq_data),
-      .req_axis_data(req_axis_data),
-      .req_axis_tuser(req_axis_tuser),
-      .req_axis_ready(req_axis_ready),
-      .req_axis_valid(req_axis_valid),
-      .srstate(srstate));
 
    ddr_fifo proc_req
      (.sender_rst(sys_rst),
@@ -661,17 +631,6 @@ module top_level
       .receiver_axis_tdata(resp_axis_data),
       .receiver_axis_tuser(resp_axis_tuser));
 
-   accumulate_resp arm
-     (.clk_in(sys_clk),
-      .rst_in(sys_rst),
-      .resp_axis_data(resp_axis_data),
-      .resp_axis_valid(resp_axis_valid),
-      .resp_axis_tuser(resp_axis_tuser),
-      .resp_axis_ready(resp_axis_ready),
-      .putMResp_data(putMResp_data),
-      .putMResp_en(putMResp_en),
-      .putMResp_rdy(putMResp_rdy));
-   
    logic [127:0]       ssc_req_axis_data;
    logic 	       ssc_req_axis_tuser;
    logic 	       ssc_req_axis_ready;
@@ -983,9 +942,8 @@ module top_level
    end
 
    assign led[0] = proc_reset;
-   assign led[1] = debug_epoch;
-   assign led[2] = init_calib_complete;
-   assign led[3] = processor_done;
+   assign led[1] = init_calib_complete;
+   assign led[2] = processor_done;
 
    assign led[4] = cr_init_valid;
    assign led[5] = valid_pixel;

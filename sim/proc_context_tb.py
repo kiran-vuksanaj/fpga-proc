@@ -72,13 +72,15 @@ async def deliver_value(clk,valid,ready,wire,data):
     wire.value = 0
     valid.value = 0
 
-async def deliver_values(clk,valid,ready,wire,data_list):
+async def deliver_values(dut,clk,valid,ready,wire,data_list):
+    dut.req_axis_ready.value = 0
     for value in data_list:
         value_int = int.from_bytes(value,'big')
         print("delivering %032x" % value_int)
         await deliver_value(clk,valid,ready,wire,value_int)
         await Timer(10,units="ns")
     print("[PY] delivery complete")
+    dut.req_axis_ready.value = 1
 
 async def handle_mmio(dut):
     while True:
@@ -112,9 +114,10 @@ async def handle_memory_requests(dut,memory):
                             resp_data_queue.append(memory[req_addr+i])
                         else:
                             resp_data_queue.append(bytes(4))
-                    await cocotb.start( deliver_values(dut.clk_in,dut.resp_axis_valid,dut.resp_axis_ready,dut.resp_axis_data, resp_data_queue) )
+                    print("deliver values {}".format(len(resp_data_queue)))
+                    await cocotb.start( deliver_values(dut,dut.clk_in,dut.resp_axis_valid,dut.resp_axis_ready,dut.resp_axis_data, resp_data_queue) )
             else:
-                print("[PY]writing at 0x%x, data=%x" % (current_addr, dut.req_axis_data))
+                print("[PY]writing at 0x%x, data=%x" % (current_addr, dut.req_axis_data.value))
                 memory[current_addr] = dut.req_axis_data
                 current_addr += 1
         
