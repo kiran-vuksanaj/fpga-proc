@@ -1,6 +1,15 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+/* module cursor
+ *  little baby module to manage all state for a signal meant to increment
+ *  through values
+ * 
+ *  - cursor_out increases each cycle incr_in is high
+ *  - if setval_in is asserted, cursor_out matches manual_in
+ *  - if cursor_out reaches ROLLOVER, it returns to RESET_VAL and
+ *    rollover_out issues a single_cycle_high
+ */
 module cursor #
   (parameter WIDTH = 27,
    parameter RESET_VAL = 0,
