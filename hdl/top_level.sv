@@ -55,7 +55,7 @@ module top_level
    assign rgb1 = 0;
    
    localparam BAUD = 57600;
-   localparam CAMERA_FB_ADDR = 27'h400;
+   localparam CAMERA_FB_ADDR = 27'h1000;
    
    logic 	       clk_100_passthrough;
    logic 	       sys_clk;
@@ -203,7 +203,7 @@ module top_level
       .tuser_out(phrase_axis_tuser)
       );
 
-   channel_update write_addr_cmd = {CAMERA_FB_ADDR, (1280*720)>>3,1'b1};
+   channel_update write_addr_cmd = {CAMERA_FB_ADDR, 27'((1280*720)>>3),1'b1};
    assign phrase_axis_data = phrase_axis_tuser ? write_addr_cmd : cam_phrase_data;
 
    // =============== CHAPTER: MEMORY MIG STUFF ====================
@@ -813,7 +813,7 @@ module top_level
    assign tm_read_axis_ready[3] = 1'b0;
    
    // CHANNEL 4: read hdmi data, write nothing ever
-   channel_update read_cmd = {CAMERA_FB_ADDR, ((1280*720) >> 3), 1'b0};
+   channel_update read_cmd = {CAMERA_FB_ADDR, 27'((1280*720) >> 3), 1'b0};
    assign tm_write_axis_data[4] = read_cmd;
    assign tm_write_axis_tuser[4] = 1'b1;
    assign tm_write_axis_valid[4] = 1'b1;
