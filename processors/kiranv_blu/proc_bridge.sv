@@ -78,8 +78,10 @@ module serialize_req
 	      if (accept_out) begin
 		 $display("[srm rx] addr=%x write=%d",memReq.addr,memReq.write);
 		 $display("[srm tx] addr=%x sl=%x wen=%d",translateReq.addr,translateReq.stream_length,translateReq.wen);
-		 
-		 state <= translateReq.wen ? DATA : READY;
+
+		 if (translateReq.wen) state <= DATA;
+		 else state <= READY;
+
 		 index <= 0;
 		 // $stop;
 	      end
@@ -220,7 +222,8 @@ module handle_mmio
 	      if (getMMIOReq_en) begin
 		 mstate <= BUSY;
 		 mmio_hold <= mmio_in;
-		 current_mtype <= (mmio_in.addr == 32'hFFF8) ? FINISH : PUTCHAR;
+		 if (mmio_in.addr == 32'hFFF8) current_mtype <= FINISH;
+		 else current_mtype <= PUTCHAR;
 	      end
 	   end
 	   BUSY: begin
@@ -270,7 +273,9 @@ module wrapped_processor
    );
 
    logic 	       getMReq_en;
+   
    logic 	       getMReq_rdy;
+   
    logic [538:0]       getMReq_data;
 
    logic 	       getMMIOReq_en;
