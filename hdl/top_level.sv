@@ -781,6 +781,7 @@ module top_level
    assign tm_read_axis_ready[0] = ui_resp_axis_ready;
    assign ui_resp_axis_valid = tm_read_axis_valid[0];
    assign ui_resp_axis_data = tm_read_axis_data[0];
+   assign tm_read_axis_af[0] = resp_axis_af;
    assign ui_resp_axis_tuser = tm_read_axis_tuser[0];
 
    // CHANNEL 1: uart write our machine code
@@ -802,6 +803,7 @@ module top_level
    assign tm_read_axis_ready[2] = ui_ssc_resp_axis_ready;
    assign ui_ssc_resp_axis_valid = tm_read_axis_valid[2];
    assign ui_ssc_resp_axis_data = tm_read_axis_data[2];
+   assign tm_read_axis_af[2] = ssc_resp_axis_af;
    assign ui_ssc_resp_axis_tuser = tm_read_axis_tuser[2];
    
    // CHANNEL 3: write camera data, read nothing ever

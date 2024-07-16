@@ -76,11 +76,10 @@ module serialize_req
 	   end
 	   TUSER: begin
 	      if (accept_out) begin
-		 $display("[srm rx] addr=%x write=%d",memReq.addr,memReq.write);
-		 $display("[srm tx] addr=%x sl=%x wen=%d",translateReq.addr,translateReq.stream_length,translateReq.wen);
+		 // $display("[srm rx] addr=%x write=%d",memReq.addr,memReq.write);
+		 // $display("[srm tx] addr=%x sl=%x wen=%d",translateReq.addr,translateReq.stream_length,translateReq.wen);
 
-		 if (translateReq.wen) state <= DATA;
-		 else state <= READY;
+		 state <= translateReq.wen ? DATA : READY;
 
 		 index <= 0;
 		 // $stop;
@@ -222,8 +221,7 @@ module handle_mmio
 	      if (getMMIOReq_en) begin
 		 mstate <= BUSY;
 		 mmio_hold <= mmio_in;
-		 if (mmio_in.addr == 32'hFFF8) current_mtype <= FINISH;
-		 else current_mtype <= PUTCHAR;
+		 current_mtype <= (mmio_in.addr == 32'hFFF8) ? FINISH : PUTCHAR;
 	      end
 	   end
 	   BUSY: begin

@@ -3,7 +3,7 @@ from cocotb.triggers import RisingEdge, Timer, FallingEdge
 from cocotb.utils import get_sim_time
 import random
 
-debug = True
+debug = False
 
 def writemem(memory, addr, data):
     # data: bytearray, length 128 bits/16 bytes
@@ -38,7 +38,6 @@ def generate_memory(filename):
                     current_chunk = []
                     current_index = 0
                 new_addr = int(line[1:].strip(),16) >> 2
-                print("%x" % new_addr)
                 current_addr = new_addr
             else:
                 current_chunk.append( int(line.strip(), 16).to_bytes(4,'big') )
@@ -88,7 +87,7 @@ async def handle_request(dut,memory,responses):
             addr = int(dut.app_addr.value) >> 3
             await Timer(DELAY_NS,units="ns")
             read_data = readmem(memory,addr)
-            print(addr,read_data)
+            # print(addr,read_data)
             responses.append( int.from_bytes(read_data,"big") )
             if (debug):
                 print("[mig] read request @{:07x}".format(addr))

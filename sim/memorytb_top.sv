@@ -73,16 +73,20 @@ module memorytb_top
 
       .processor_done(processor_done));
 
-   logic 	       write_axis_ready[1:0];
-   logic 	       write_axis_valid[1:0];
-   logic [127:0]       write_axis_data[1:0];
-   logic 	       write_axis_tuser[1:0];
+   // declared as wires due to a bug in Icarus...
+   // github:steveicarus/iverilog issue #1001
+   // fixed in 13.0, but ubuntu installs 11.0...
+   
+   wire 	       write_axis_ready[1:0];
+   wire 	       write_axis_valid[1:0];
+   wire [127:0]       write_axis_data[1:0];
+   wire 	       write_axis_tuser[1:0];
 
-   logic 	       read_axis_ready[1:0];
-   logic 	       read_axis_valid[1:0];
-   logic [127:0]       read_axis_data[1:0];
-   logic 	       read_axis_tuser[1:0];
-   logic 	       read_axis_af[1:0];
+   wire 	       read_axis_ready[1:0];
+   wire 	       read_axis_valid[1:0];
+   wire [127:0]       read_axis_data[1:0];
+   wire 	       read_axis_tuser[1:0];
+   wire 	       read_axis_af[1:0];
 
    logic [31:0]        debug_lane;
 

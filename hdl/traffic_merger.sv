@@ -21,8 +21,6 @@ typedef struct packed {
 `endif
 
 
-
-
 /*
  * traffic_merger module: Manages N sources of MIG commands
  *  - Takes commands indicating read/write mode for each "channel",
@@ -82,7 +80,7 @@ module traffic_merger #
    input wire 		write_axis_tuser [CHANNEL_COUNT-1:0],
    input wire 		write_axis_valid [CHANNEL_COUNT-1:0],
    input wire 		write_axis_smallpile [CHANNEL_COUNT-1:0],
-   output logic 	write_axis_ready [CHANNEL_COUNT-1:0],
+   output logic 	write_axis_ready[CHANNEL_COUNT-1:0],
 
    // Array of AXI-Stream read data/command inputs, an index for each channel
    output logic [127:0] read_axis_data [CHANNEL_COUNT-1:0],
@@ -104,6 +102,7 @@ module traffic_merger #
    /* Nothing should be done until MIG asserts `initial_calib_complete` */
    logic 		     hold_for_calib;
 
+   
    // Arrays of state values for each channel
    logic 		     wen[CHANNEL_COUNT-1:0];           // current read/write state: write enable
    logic [26:0] 	     cmd_addr[CHANNEL_COUNT-1:0];      // next (128-bit) address to request from MIG
@@ -170,7 +169,6 @@ module traffic_merger #
 				 ~yield[current_channel] &&
 				 app_rdy;
    assign command_success = write_command_success || read_command_success;
-   logic [CHANNEL_COUNT-1:0] yields = {yield[0], yield[1], yield[2]};
    
    generate
       /* State variables for each channel: generate block to instantiate all separately */
@@ -245,7 +243,7 @@ module traffic_merger #
 	 // WRITE command for MIG from current_channel
 
 	 // address offset by 7: 128-bit address becomes 1-bit address (what the MIG wants)
-	 app_addr = cmd_addr[current_channel] << 7;
+	 app_addr = cmd_addr[current_channel] << 3;
 	 app_cmd = CMD_WRITE;
 	 app_en = 1'b1;
 	 app_wdf_wren = 1'b1;
@@ -258,7 +256,7 @@ module traffic_merger #
 	 // READ command for MIG from current_channel
 
 	 // address offset by 7: 128-bit address becomes 1-bit address (what the MIG wants)
-	 app_addr = cmd_addr[current_channel] << 7;
+	 app_addr = cmd_addr[current_channel] << 3;
 	 app_cmd = CMD_READ;
 	 app_en = 1'b1;
 	 app_wdf_wren = 1'b0;
@@ -382,7 +380,7 @@ module response_destination_fifo #
      (.clk_in(clk_in),
       .rst_in(rst_in),
       .incr_in(read_cmd_success),
-      .setval_in(0),
+      .setval_in('b0),
       .manual_in(),
       .cursor_out(new_cmd_index));
 
@@ -390,7 +388,7 @@ module response_destination_fifo #
      (.clk_in(clk_in),
       .rst_in(rst_in),
       .incr_in(read_data_ready),
-      .setval_in(0),
+      .setval_in('b0),
       .manual_in(),
       .cursor_out(next_rsp_index));
 
