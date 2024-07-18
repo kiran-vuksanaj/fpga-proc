@@ -10,6 +10,16 @@ typedef struct packed {
 } channel_update;
 `endif
 
+`ifndef PARSED_META
+`define PARSED_META
+typedef struct packed {
+   logic [2:0] channel;
+   logic [26:0] addr;
+   logic 	wen;
+} parsed_meta;
+`endif
+
+
 module top_level
   (
    input wire 	       clk_100mhz,
@@ -538,6 +548,8 @@ module top_level
    logic [7:0] 	       uart_tx_data;
    logic 	       uart_tx_ready;
    logic 	       uart_tx_valid;
+
+   logic 	       mmio_uart_txd;
    
    uart_transmitter
      #(.BAUD_RATE(BAUD),
@@ -547,7 +559,7 @@ module top_level
 	.data_in(uart_tx_data),
 	.valid_in(uart_tx_valid),
 	.ready_in(uart_tx_ready),
-	.uart_tx(uart_txd));
+	.uart_tx(mmio_uart_txd));
    
    logic 	       proc_reset;
    assign proc_reset = (sys_rst || ~proc_release);
@@ -890,6 +902,47 @@ module top_level
       .read_axis_af(tm_read_axis_af),
       .read_axis_ready(tm_read_axis_ready));
 
+   logic [7:0] 	       probe_uart_tx_data;
+   logic 	       probe_uart_tx_ready;
+   logic 	       probe_uart_tx_valid;
+
+   logic 	       probe_uart_txd;
+   
+   parsed_meta packet_meta;
+   assign packet_meta.addr = app_addr[26:0];
+   assign packet_meta.channel = tg.current_channel;
+   assign packet_meta.wen = (app_wdf_wren);
+
+   logic 	       probe_trigger, transmit_trigger;
+   assign probe_trigger = btn[2];
+   assign transmit_trigger = processor_done;
+   
+   pipe_probe probe
+     (.clk_in(ui_clk),
+      .rst_in(sys_rst),
+      .probe_trigger_in(probe_trigger),
+      .transmit_trigger_in(transmit_trigger),
+      .uart_tx_data(probe_uart_tx_data),
+      .uart_tx_ready(probe_uart_tx_ready),
+      .uart_tx_valid(probe_uart_tx_valid),
+      .packet_meta(packet_meta),
+      .checkpointA_en( tg.command_success ),
+      .checkpointB_en( app_rd_data_valid ),
+      .id_a( tg.rqm.new_cmd_index ),
+      .id_b( tg.rqm.next_rsp_index ));
+
+   uart_transmitter
+     #(.BAUD_RATE(BAUD),
+       .CLOCK_SPEED(81_250_000)) probe_utm
+       (.clk_in(ui_clk),
+	.rst_in(sys_rst),
+	.data_in(probe_uart_tx_data),
+	.valid_in(probe_uart_tx_valid),
+	.ready_in(probe_uart_tx_ready),
+	.uart_tx(probe_uart_txd));
+
+   assign uart_txd = sw[2] ? probe_uart_txd : mmio_uart_txd;
+   
    
    ddr3_mig ddr3_mig_inst 
      (

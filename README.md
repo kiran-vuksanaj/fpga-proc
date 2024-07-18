@@ -1,3 +1,34 @@
+# NEW STUFF: ila probe
+* `hdl/pipe_probe.sv`: Module for capturing probe data, writing it to BRAM
+  * Example instantiations exist in `hdl/top_level.sv` and `sim/memorytb_top.sv`
+* `util/processor_port.py <hexfile> probe <probe_output>`; run processor, then capture probe data
+* `sim/mig.py`: CocoTB methods to simply simulate MIG interactions
+* `sim/proc_context_tb.py`: run processor, and capture probe data
+
+* `python3 util/gen_vcd.py <hexfile> <vcdfile>` builds waveform from probe output
+* `python3 util/gen_kanata.py <hexfile> <output>.log` builds "Kanata" format for
+
+* `sw[2]`: When on, UART output comes from probe. When off, UART output comes from processor.
+
+### Konata logging
+* I've been using [Konata](https://github.com/shioyadan/Konata), a tool typically used for visualing pipelined processors, and generating kanata logs (the [format](https://github.com/shioyadan/Konata/blob/master/docs/kanata-log-format.md) specified for the tool) but just setting the "pipeline stages" to be relevant to the probe data I have (write commands, read commands, read responses). It's a very nice way to be able to display pipelined data, dead cycles, etc.
+
+### How-To: Probe in Simulation
+* `cd sim/`
+* `make`: runs the `proc_context_tb` cocotb tests, running the processor with the `mem.vmh` instructions, and generates the probe output at `sim.hex`
+* to get a VCD file: `python3 util/gen_vcd.py sim/sim.hex capture.vcd`
+* to get a Konata-format log: `python3 util/gen_kanata.py sim/sim.hex capture.log`
+
+### How-To: Probe on Fabric
+* build script like normal
+* load to board
+* set `sw[2]` to high: capture probe output instead of processor output
+* `python3 util/processor_port.py util/hex/hello.hex probe capture.mem`: Load "Hello World" into processor, prepare for probe output
+* Press `btn[2]` to start processor and trigger probe
+* `^C` to escape python script
+* to get a VCD file: `python3 util/gen_vcd.py capture.mem capture.vcd`
+* to get a Konata-format log: `python3 util/gen_kanata.py capture.mem capture.log`
+
 # Processor + Camera interaction
 
 ### prerequisites

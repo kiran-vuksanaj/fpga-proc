@@ -6,7 +6,7 @@ SIM ?= icarus
 TOPLEVEL_LANG ?= verilog
 WAVES = 1
 
-VERILOG_SOURCES += $(PWD)/memorytb_top.sv $(PWD)/../hdl/proc/proc_bridge.sv $(PWD)/../hdl/cursor.sv $(PWD)/../hdl/proc/*.v $(PWD)/../hdl/traffic_merger.sv
+VERILOG_SOURCES += $(PWD)/memorytb_top.sv $(PWD)/../hdl/proc/proc_bridge.sv $(PWD)/../hdl/cursor.sv $(PWD)/../hdl/proc/*.v $(PWD)/../hdl/traffic_merger.sv $(PWD)/../hdl/pipe_probe.sv $(PWD)/../hdl/xilinx_single_port_ram_read_first.v
 # VERILOG_SOURCES += $(PWD)/../hdl/parse_asm.sv $(PWD)/../hdl/cursor.sv
 # use VHDL_SOURCES for VHDL files
 

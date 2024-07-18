@@ -1,14 +1,30 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`ifndef PARSED_META
+`define PARSED_META
+typedef struct packed {
+   logic [2:0] channel;
+   logic [26:0] addr;
+   logic 	wen;
+} parsed_meta;
+`endif
+
 module memorytb_top
   (
    input wire 		ui_clk,
    input wire 		rst_in,
 
-   output logic [7:0] 	uart_tx_data,
-   input wire 		uart_tx_ready,
-   output logic 	uart_tx_valid,
+   output logic [7:0] 	mmio_uart_tx_data,
+   input wire 		mmio_uart_tx_ready,
+   output logic 	mmio_uart_tx_valid,
+
+   output logic [7:0] 	probe_uart_tx_data,
+   input wire 		probe_uart_tx_ready,
+   output logic 	probe_uart_tx_valid,
+
+   input wire 		probe_trigger,
+   input wire 		transmit_trigger,
 
    output logic 	processor_done,
 
@@ -65,9 +81,9 @@ module memorytb_top
       .resp_axis_tuser(resp_axis_tuser),
       .resp_axis_ready(resp_axis_ready),
 
-      .uart_tx_data(uart_tx_data),
-      .uart_tx_ready(uart_tx_ready),
-      .uart_tx_valid(uart_tx_valid),
+      .uart_tx_data(mmio_uart_tx_data),
+      .uart_tx_ready(mmio_uart_tx_ready),
+      .uart_tx_valid(mmio_uart_tx_valid),
 
       .debug_pc(debug_pc),
 
@@ -166,6 +182,27 @@ module memorytb_top
       .read_axis_valid(read_axis_valid),
       .read_axis_af(read_axis_af),
       .read_axis_ready(read_axis_ready));
+
+
+   parsed_meta packet_meta;
+   assign packet_meta.addr = app_addr[26:0];
+   assign packet_meta.channel = tg.current_channel;
+   assign packet_meta.wen = (app_wdf_wren);
+   
+   pipe_probe probe
+     (.clk_in(ui_clk),
+      .rst_in(rst_in),
+      .probe_trigger_in(probe_trigger),
+      .transmit_trigger_in(transmit_trigger),
+      .uart_tx_data(probe_uart_tx_data),
+      .uart_tx_ready(probe_uart_tx_ready),
+      .uart_tx_valid(probe_uart_tx_valid),
+      .packet_meta(packet_meta),
+      .checkpointA_en( tg.command_success ),
+      .id_a( tg.rqm.new_cmd_index ),
+      .checkpointB_en( app_rd_data_valid ),
+      .id_b( tg.rqm.next_rsp_index ));
+
 
 endmodule
 
