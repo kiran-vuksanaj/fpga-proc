@@ -86,6 +86,24 @@ set_property -dict {PACKAGE_PIN H3  IOSTANDARD LVCMOS33} [ get_ports "ss1_c[5]"]
 set_property -dict {PACKAGE_PIN E5  IOSTANDARD LVCMOS33} [ get_ports "ss1_c[6]"]
 ##set_property -dict {PACKAGE_PIN J4  IOSTANDARD LVCMOS33} [ get_ports "ss1_c[7]"]
 
+# CAMERA BOARD v2
+#set_property -dict {PACKAGE_PIN F14 IOSTANDARD LVCMOS33}  [ get_ports "camera[1]" ] # pmoda[0]
+#set_property -dict {PACKAGE_PIN F15 IOSTANDARD LVCMOS33}  [ get_ports "camera[3]" ] # pmoda[1]
+#set_property -dict {PACKAGE_PIN H13 IOSTANDARD LVCMOS33}  [ get_ports "camera[5]" ] # pmoda[2]
+#set_property -dict {PACKAGE_PIN H14 IOSTANDARD LVCMOS33}  [ get_ports "camera[7]" ] # pmoda[3]
+#set_property -dict {PACKAGE_PIN J13 IOSTANDARD LVCMOS33}  [ get_ports "camera[0]" ] # pmoda[4]
+#set_property -dict {PACKAGE_PIN J14 IOSTANDARD LVCMOS33}  [ get_ports "camera[2]" ] # pmoda[5]
+#set_property -dict {PACKAGE_PIN E14 IOSTANDARD LVCMOS33}  [ get_ports "camera[4]" ] # pmoda[6]
+#set_property -dict {PACKAGE_PIN E15 IOSTANDARD LVCMOS33}  [ get_ports "camera[6]" ] # pmoda[7]
+
+#set_property -dict {PACKAGE_PIN D11 IOSTANDARD LVCMOS33 DRIVE 24} [get_ports "cam_xclk" ]  # jab[0]
+#set_property -dict {PACKAGE_PIN C12 IOSTANDARD LVCMOS33} [get_ports "cam_hsync" ] # jab[1]
+#set_property -dict {PACKAGE_PIN E16 IOSTANDARD LVCMOS33 PULLTYPE PULLUP} [get_ports "i2c_sda" ]   # jab[2]
+#set_property -dict {PACKAGE_PIN G16 IOSTANDARD LVCMOS33} [get_ports "cam_pclk" ]  # jab[3]
+#set_property -dict {PACKAGE_PIN C11 IOSTANDARD LVCMOS33} [get_ports "cam_vsync" ] # jab[4]
+#set_property -dict {PACKAGE_PIN D10 IOSTANDARD LVCMOS33 PULLTYPE PULLUP} [get_ports "i2c_scl" ]   # jab[5]
+
+
 set_property -dict {PACKAGE_PIN F14 IOSTANDARD LVCMOS33}  [ get_ports "pmoda[0]" ]
 set_property -dict {PACKAGE_PIN F15 IOSTANDARD LVCMOS33}  [ get_ports "pmoda[1]" ]
 set_property -dict {PACKAGE_PIN H13 IOSTANDARD LVCMOS33}  [ get_ports "pmoda[2]" ]

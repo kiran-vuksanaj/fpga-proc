@@ -916,6 +916,10 @@ module top_level
    logic 	       probe_trigger, transmit_trigger;
    assign probe_trigger = btn[2];
    assign transmit_trigger = processor_done;
+
+   logic 	       checkpoint_a_en, checkpoint_b_en;
+   assign checkpoint_a_en = sw[3] ? (tg.command_success && tg.current_channel == 0) : (tg.command_success);
+   assign checkpoint_b_en = sw[3] ? (app_rd_data_valid && tg.next_response_channel == 0) : (app_rd_data_valid);
    
    pipe_probe probe
      (.clk_in(ui_clk),
@@ -926,8 +930,10 @@ module top_level
       .uart_tx_ready(probe_uart_tx_ready),
       .uart_tx_valid(probe_uart_tx_valid),
       .packet_meta(packet_meta),
-      .checkpointA_en( tg.command_success ),
-      .checkpointB_en( app_rd_data_valid ),
+      // .checkpointA_en( tg.command_success && tg.current_channel == 0),
+      // .checkpointB_en( app_rd_data_valid && tg.next_response_channel == 0),
+      .checkpointA_en( checkpoint_a_en ),
+      .checkpointB_en( checkpoint_b_en ),
       .id_a( tg.rqm.new_cmd_index ),
       .id_b( tg.rqm.next_rsp_index ));
 
@@ -1000,16 +1006,19 @@ module top_level
    assign led[1] = init_calib_complete;
    assign led[2] = processor_done;
 
-   assign led[4] = cr_init_valid;
-   assign led[5] = valid_pixel;
-   assign led[6] = valid_cc;
-   assign led[7] = phrase_axis_valid;
-   assign led[8] = cam_write_axis_valid;
-   assign led[9] = tm_write_axis_valid[3];
-   assign led[10] = trigger_btn_camera;
-   assign led[11] = cr_init_ready;
-   assign led[12] = busy;
-   assign led[13] = bus_active;
+   // assign led[4] = cr_init_valid;
+   // assign led[5] = valid_pixel;
+   // assign led[6] = valid_cc;
+   // assign led[7] = phrase_axis_valid;
+   // assign led[8] = cam_write_axis_valid;
+   // assign led[9] = tm_write_axis_valid[3];
+   // assign led[10] = trigger_btn_camera;
+   // assign led[11] = cr_init_ready;
+   // assign led[12] = busy;
+   // assign led[13] = bus_active;
+   assign led[3] = probe_uart_tx_ready;
+   assign led[4] = probe_uart_tx_valid;
+   assign led[6:5] = probe.state;
    // assign led[15:14] = phrase_axis_valid_count;
    
 

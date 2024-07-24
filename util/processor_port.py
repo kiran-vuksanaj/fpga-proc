@@ -75,31 +75,18 @@ def write_tty(ser,filename):
             if (total % 1000 == 0):
                 print(total)
 
-def print_probedata(full_packet):
-    format_str = "\tcycle: {cycle:x}\n\tmeta.channel: {channel:b}\n\tmeta.addr: {addr:x}\n\tmeta.wen: {wen:b}\n\tchckpointA:{checkpointA:b} [{id_a:x}]\n\tcheckpointB:{checkpointB:b} [{id_b:x}]"
-    components = {
-        "id_b": (full_packet & 0x3F),
-        "checkpointB": ((full_packet>>6) & 0x1),
-        "id_a": ((full_packet>>7) & 0x3F),
-        "checkpointA": ((full_packet >> 13) & 0x1),
-        "wen": ((full_packet >> 14) & 0x1),
-        "addr": ((full_packet >> 15) & 0x7FFFFFF),
-        "channel": ((full_packet >> 42) & 0x7),
-        "cycle": ((full_packet >> 45) & 0xFFFF)
-        }
-    
-    print(format_str.format(**components))
-    assert( components["checkpointB"]==1 or components["checkpointA"]==1 )
-        
+
 def handle_probe(ser,filename):
     receive_count = 0
     with open(filename,'w') as f:
         while True:
-            entry_bytes = ser.read(8)
-            entry = int.from_bytes(entry_bytes,'big')
-            print("%016x"%entry)
-            print_probedata(entry)
-            f.write("{:016x}\n".format(entry))
+            # single_byte = ser.read(1)
+            # single_parcel = int.from_bytes(single_byte,'big')
+            # print("{:02x}".format(single_parcel))
+
+            header_byte = ser.read(7)
+            header_int = int.from_bytes(header_byte,'little')
+            f.write("{:014x}\n".format(header_int))
         
         
 

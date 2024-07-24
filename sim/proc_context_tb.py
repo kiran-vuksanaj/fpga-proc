@@ -23,6 +23,7 @@ async def capture_bram(dut,memory):
         if (dut.probe.ram_wea.value == 1):
             addr = int(dut.probe.ram_addr.value)
             memory[addr] = int(dut.probe.ram_din.value)
+            print("[bram] write @({:x}) = {:x}".format(addr,memory[addr]))
 
 async def handle_mmio(dut):
     """ listen for UART and processor_done outputs, print UART output and exit when program completes"""
@@ -71,7 +72,7 @@ def print_probedata(full_packet):
     components = unpack_vals(PACKET_FIELD_LIST,full_packet)
     
     print(format_str.format(**components))
-    assert( components["checkpointB_en"]==1 or components["checkpointA_en"]==1 )
+    # assert( components["checkpointB_en"]==1 or components["checkpointA_en"]==1 )
     return components
         
 async def handle_probe(dut, memory,f):
@@ -86,17 +87,18 @@ async def handle_probe(dut, memory,f):
         if (dut.probe_uart_tx_valid.value == 1):
             value = int(dut.probe_uart_tx_data.value)
             dut.probe_uart_tx_ready.value = 0
-            await Timer(1000,units="ns")
+            await Timer(1001,units="ns")
             dut.probe_uart_tx_ready.value = 1
-            current_chunk.append( value )
+            current_chunk.insert(0, value )
             
             receive_count += 1
-            if ((receive_count % 8) == 0):
+            if ((receive_count % 7) == 0):
                 full_packet = int.from_bytes(current_chunk,'big')
-                print("[@%03x] %016x" % (addr,full_packet) )
-                f.write("%016x\n" % full_packet)
+                print("[@%03x] %014x" % (addr,full_packet) )
+                print("vs %014x" % memory[addr] )
+                f.write("%014x\n" % full_packet)
                 f.flush()
-                print_probedata(full_packet)
+                # print_probedata(full_packet)
                 assert( full_packet == memory[addr] )
                 current_chunk = bytearray()
                 addr += 1
@@ -113,7 +115,7 @@ async def test_a(dut):
     dut.rst_in.value = 0
     dut.probe_trigger.value = 0
     dut.transmit_trigger.value = 0
-    dut.probe_uart_tx_ready.value = 0
+    dut.probe_uart_tx_ready.value = 1
     await Timer(10,units="ns")
     dut.rst_in.value = 1
     await Timer(30,units="ns")

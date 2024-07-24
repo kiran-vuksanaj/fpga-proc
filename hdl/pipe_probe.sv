@@ -10,15 +10,6 @@ typedef struct packed {
 } parsed_meta;
 `endif
 
-typedef struct packed {
-   logic [15:0] cycle_count;
-   parsed_meta meta;
-   logic 	checkpointA;
-   logic [5:0] 	id_a;
-   logic 	checkpointB;
-   logic [5:0] 	id_b;
-} bram_entry;
-
 
 module pipe_probe #
   (parameter META_WIDTH = 31,
@@ -42,7 +33,8 @@ module pipe_probe #
    );
 
    localparam RAM_ADDR = $clog2(RAM_DEPTH);
-   localparam BRAM_WIDTH = $bits(bram_entry);
+   localparam PORT_WIDTH = 7;
+   localparam BRAM_WIDTH = PORT_WIDTH*8;
 
    // activate probe with probe_trigger_in.
    // while probe is active, it waits for cycles where at least one checkpoint is active
@@ -51,12 +43,10 @@ module pipe_probe #
    // once BRAM is full, or transmit_trigger_in is activated, data is transmitted 1 byte
    // at a time to the UART output.
 
-   // Entry data: described in the 'bram_entry' struct above. its about 8 bytes long (right now)
    
    typedef enum 	       {IDLE,PROBE,TRANSMIT} probestate;
    probestate state;
       
-   logic [31:0] 	       cycle_count;
 
    logic [RAM_ADDR-1:0]        ram_addr;
    logic [RAM_ADDR-1:0]        final_addr;
@@ -76,100 +66,121 @@ module pipe_probe #
       .rsta(rst_in),
       .regcea(1'b1),
       .douta(ram_dout));
+
+   logic [3:0] 		       length;
+   logic [55:0] 	       message;
+   logic 		       message_valid;
    
+   probe_message pmm
+     (.clk_in(clk_in),
+      .rst_in(rst_in),
+      .checkpoint_a_en(checkpointA_en),
+      .checkpoint_a_id(id_a),
+      .checkpoint_a_meta(packet_meta),
+      .checkpoint_b_en(checkpointB_en),
+      .checkpoint_b_id(id_b),
+      .message_length(length),
+      .message_out(message),
+      .message_valid(message_valid));
 
-   parsed_meta meta;
-   assign meta = packet_meta;
-
-   logic 		       take_meta;
-   assign take_meta = checkpointA_en;
-   logic 		       write_entry;
-   assign write_entry = (checkpointA_en || checkpointB_en);
+   logic [55:0] 	       message_din;
+   logic [RAM_ADDR-1:0]        message_addr;
+   logic 		       message_we;
    
-   bram_entry entry_in;
-   assign entry_in.cycle_count = cycle_count;
-   assign entry_in.meta = take_meta ? meta : 'b0;
-   assign entry_in.checkpointA = checkpointA_en;
-   assign entry_in.id_a = (checkpointA_en) ? id_a : 'b0;
-   assign entry_in.checkpointB = checkpointB_en;
-   assign entry_in.id_b = (checkpointB_en) ? id_b : 'b0;
+   message_bram #(.PORT_WIDTH(PORT_WIDTH),.BRAM_DEPTH(RAM_DEPTH)) mbm
+     (.clk_in(clk_in),
+      .rst_in(rst_in),
+      .en_in( state == PROBE ),
+      .valid_in(message_valid),
+      .length_in(length),
+      .data_in(message),
+      .bram_din(message_din),
+      .bram_we(message_we),
+      .bram_addr(message_addr));
 
-   assign ram_din = entry_in;
-
-   assign ram_wea = (write_entry && state == PROBE);
-
-   logic [7:0][7:0] 	       bytes;
-   assign bytes = ram_dout;
-   logic [2:0] 		       index;
+   logic [RAM_ADDR-1:0]        transmit_addr;
    
-   logic 		       wait_bram_cycle;
-   assign uart_tx_valid = (~wait_bram_cycle && state == TRANSMIT);
+   always_comb begin
+      case(state)
+	IDLE: begin
+	   ram_addr = 0;
+	   ram_din = 0;
+	   ram_wea = 0;
+	end
+	PROBE: begin
+	   ram_addr = message_addr;
+	   ram_wea = message_we;
+	   ram_din = message_din;
+	end
+	TRANSMIT: begin
+	   ram_addr = transmit_addr;
+	   ram_din = 0;
+	   ram_wea = 0;
+	end
+      endcase
+   end // always_comb
 
-   logic 		       accept_uart;
-   assign accept_uart = (uart_tx_ready && uart_tx_valid);
 
-   assign uart_tx_data = bytes[7-index];
-			 
-  always_ff @(posedge clk_in) begin
-     if (rst_in) begin
-	cycle_count <= 32'b0;
-	state <= IDLE;
-	ram_addr <= 'b0;
-	index <= 3'b0;
-	wait_bram_cycle <= 1'b1;
-	final_addr <= 'b0;
-     end
-     else begin
-	case(state)
-	  IDLE: begin
-	     
-	     if (probe_trigger_in) begin
-		cycle_count <= 32'b0;
-		state <= PROBE;
-	     end
-	  end
-	  PROBE: begin
+   logic [1:0] wait_for_bram;
+   logic accept_out;
+   logic [3:0] index;
 
-	     cycle_count <= cycle_count + 1;
+   logic [PORT_WIDTH-1:0][7:0] dout_bytes;
+   assign dout_bytes = ram_dout;
 
-	     if (write_entry) begin
-		ram_addr <= ram_addr + 1;
-	     end
-	     
-	     if (checkpointA_en) begin
-		$display("@[%08x] checkpointA : {channel %x, addr %x wen %b}",cycle_count,meta.channel,meta.addr,meta.wen);
-	     end
-	     if (checkpointB_en) begin
-		$display("@[%08x] checkpointB",cycle_count);
-	     end
-	     
-	     if ( (cycle_count+1) == 0 || (ram_addr+1 == 0) || (ram_addr+1 == RAM_DEPTH) || transmit_trigger_in ) begin
-		state <= TRANSMIT;
-		ram_addr <= 'b0;
-		final_addr <= ram_addr;
-		index <= 3'b0;
-		wait_bram_cycle <= 1'b0;
-	     end
-	  end // case: PROBE
-	  TRANSMIT: begin
-	     if (wait_bram_cycle == 1'b1) begin
-		wait_bram_cycle <= 1'b0;
-	     end
-	     else begin
-		if( accept_uart ) begin
-		   index <= index + 1;
-		   if ( index == 7 ) begin
-		      wait_bram_cycle <= 1'b1;
-		      ram_addr <= ram_addr + 1;
-		      if (ram_addr+1 == final_addr) state <= IDLE;
-		   end
-		end
-	     end
-	  end
-	endcase
-	
-     end
-  end
+   assign uart_tx_data = dout_bytes[index];
+   assign accept_out = (uart_tx_ready && uart_tx_valid);
+   assign uart_tx_valid = (state == TRANSMIT && wait_for_bram == 0);
+   
+   
+   always_ff @(posedge clk_in) begin
+      if (rst_in) begin
+	 state <= IDLE;
+	 transmit_addr <= 0;
+	 wait_for_bram <= 1'b1;
+	 index <= 0;
+	 final_addr <= 0;
+      end else begin
+	 case(state)
+	   IDLE: begin
+	      if (probe_trigger_in) state <= PROBE;
+	   end
+	   PROBE: begin
+	      if (ram_addr + 1 == 0 || ram_addr + 1 == RAM_DEPTH || transmit_trigger_in) begin
+		 state <= TRANSMIT;
+		 transmit_addr <= 0;
+		 wait_for_bram <= 2'd2;
+		 index <= 0;
+		 final_addr <= ram_addr;
+		 
+	      end
+	   end
+	   TRANSMIT: begin
+	      if (wait_for_bram > 0) begin
+		 wait_for_bram <= wait_for_bram - 1;
+	      end else begin
+		 if (accept_out) begin
+		    if (index < PORT_WIDTH-1) begin
+		       $display("transmitted %02x [%d] %012x",uart_tx_data,index,dout_bytes);
+		       index <= index + 1;
+		    end
+		    else begin
+		       index <= 0;
+		       if (transmit_addr + 1 == RAM_DEPTH || transmit_addr + 1 == 0 || transmit_addr + 1 == final_addr) begin
+			  state <= IDLE;
+		       end
+		       else begin
+			  transmit_addr <= transmit_addr + 1;
+			  wait_for_bram <= 1'b1;
+		       end
+		    end
+		 end
+	      end
+	   end
+	 endcase
+      end
+   end
+
 
 endmodule
 
